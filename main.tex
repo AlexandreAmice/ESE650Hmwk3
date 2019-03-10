@@ -8,6 +8,7 @@
 \usepackage{bm}
 \usepackage{bbm}
 \usepackage{algorithm, algorithmicx, algpseudocode}
+\usepackage{/home/amice/Desktop/Own}
 
 \usepackage{geometry}
 \geometry{margin=1in}
@@ -16,6 +17,7 @@
 \newcommand{\bmat}[1]{\begin{bmatrix} #1 \end{bmatrix}}
 
 \DeclareMathOperator{\sgn}{sgn}
+\let\diag\relax
 \DeclareMathOperator{\diag}{diag}
 
 \newcommand{\inputtikz}[2]{%  
@@ -24,6 +26,7 @@
 
 \title{ESE 650, Spring 2019 Assignment 3}
 \date{Due March 15, 2019}
+\author{Alexandre Amice}
 
 \begin{document}
 
@@ -43,12 +46,215 @@
     0 & 0 & 0 & 1
   \end{bmatrix} \in SE(3)
   \]
+  Note that 
+  \begin{align*}
+   T(1) = \begin{bmatrix}
+    \cos\frac{\pi}{3}  & 0 & -\sin\frac{\pi}{3} & 1\\
+    0  &  1 &  0 &0\\
+    \sin\frac{\pi}{3} &  0 & \cos\frac{\pi}{3} & 2\\
+    0 & 0 & 0 & 1
+  \end{bmatrix} = \begin{bmatrix}
+    \frac{1}{2}  & 0 & -\frac{\sqrt{3}}{2} & 1\\
+    0  &  1 &  0 &0\\
+    \frac{\sqrt{3}}{2} &  0 & \frac{1}{2} & 2\\
+    0 & 0 & 0 & 1
+  \end{bmatrix}
+  \end{align*}
+  Also we will follow the convention
+  \begin{align*}
+   T(t) = \begin{bmatrix}
+           R(t) & s(t) \\
+           0 & 1
+          \end{bmatrix}
+  \end{align*}
+
+
     \begin{enumerate}
-      \item Find the axis-angle representations of the robot orientation at time $t=1$.
-      \item Find the quaternion representations of the robot orientation at time $t=1$ and of the inverse of this orientation.
-      \item Compute the linear and the angular velocity with respect to the world frame at time $t = 1$.
-      \item Compute the linear and the angular velocity with respect to the robot frame at time $t = 1$.
-      \item Compute the coordinates of the point $p_W = (9, 0, 0)$ in the robot frame (i.e., find $p_R$ in the robot frame) at time $t = 1$.
+      \item \textbf{Find the axis-angle representations of the robot orientation at time $t=1$}. \\\\
+      The rotation component of the matrix $T(1)$ is 
+      \begin{align*}
+      \begin{bmatrix}
+       \frac{1}{2}  & 0 & -\frac{\sqrt{3}}{2} \\
+    0  &  1 &  0\\
+    \frac{\sqrt{3}}{2} &  0 & \frac{1}{2} 
+      \end{bmatrix}
+      \end{align*}
+      From the Rodrigues formula we have
+      \begin{align*}
+       \tr(R) = 1 + 2 \cos(\theta) &= \frac{1}{2} + \frac{1}{2} + 1
+       \\
+       \Rightarrow 2 \cos(\theta) &= 1
+       \\
+       \theta &= \arccos\left(\frac{1}{2}\right)
+       \\
+       \theta &= \frac{\pi}{3}
+      \end{align*}
+      and
+      \begin{align*}
+       R-R^T &= 2\sin(\theta) \hat \omega
+       \\
+       \Rightarrow \begin{bmatrix}
+                0 & 0 & -\sqrt{3} \\
+                0 & 0& 0 \\
+                \sqrt{3} & 0 & 0
+               \end{bmatrix} &=  2 \sin\left(\frac{\pi}{3}\right) \hat \omega
+      \\
+      \begin{bmatrix}
+                0 & 0 & -\sqrt{3} \\
+                0 & 0& 0 \\
+                \sqrt{3} & 0 & 0
+               \end{bmatrix} &=  \sqrt{3} * \hat \omega
+               \\
+               \hat \omega &= \begin{bmatrix}
+                0 & 0 & -1 \\
+                0 & 0& 0 \\
+                1 & 0 & 0
+               \end{bmatrix}
+               \\
+               \Rightarrow \omega &= \begin{bmatrix}
+                                      0 \\ -1 \\ 0
+                                     \end{bmatrix}
+      \end{align*}
+
+
+
+      \item \textbf{Find the quaternion representations of the robot orientation at time $t=1$ and of the inverse of this orientation.} \\\\
+      Using the angle and axis from part (a) we have that
+      \begin{align*}
+       q &= \left( \cos\left(\frac{\theta}{2}\right), \sin\left(\frac{\theta}{2}\right) \omega \right)
+       \\
+       &= \left( \cos\left(\frac{\pi}{6}\right), \sin\left(\frac{\pi}{6}\right) \begin{bmatrix}
+       0 & -1 & 0
+       \end{bmatrix}^T\right)
+       \\
+      &= \left( \frac{\sqrt{3}}{2}, 0 , -\frac{1}{2}, 0 \right)
+      \end{align*}
+      The inverse of the orietation is given by the conjugate of the quaternion which is simply
+      \begin{align*}
+       q^* = \left( \frac{\sqrt{3}}{2}, 0 , \frac{1}{2}, 0 \right)
+      \end{align*}
+
+
+      \item \textbf{Compute the linear and the angular velocity with respect to the world frame at time $t = 1$.} \\\\
+   
+      Note that we have 
+      \begin{align*}
+       R(t)R(t)^T &= I \\
+       R'(t)R(t)^T +R(t)R'(t)^T &= 0
+       \\
+       \Rightarrow
+       R'(t) &= -R(t)R'(t)^TR(t)
+       \\
+       \Rightarrow R'(t) &= R'(t)R^T(t) R(t) = S(\omega(t)) R(t)
+      \end{align*}
+      Where $S$ is skew symmetric because it is the rigid rotation of a skew symmetric matrix. We prove that $S(\omega(t))$ is the matrix representing the angular velocity vector by consider two points $p^0, p^1$ attached to the rigid body, and the rotation $R^0_1$ which rotates between the two
+      \begin{align*}
+       p^0 &= R_1^0p^1\\
+       \Rightarrow \frac{d}{dt} p^0 &= R_0^{1'} p^1
+       \\
+       &=S(\omega)*R_1^0 p^1
+       \\
+       &= \omega \times p^0
+      \end{align*}
+   
+      We proceed by differentitating the matrix $T(t)$
+      \begin{align*}
+       \frac{d}{dt} T(t) = \begin{bmatrix}
+                            -\frac{\pi}{3} \sin\left( \frac{t \pi}{3} \right) & 0 & -\frac{\pi}{3} \cos\left( \frac{t \pi}{3}  \right) & 1
+                            \\
+                            0 & 0 & 0 & 0 \\
+                            \frac{\pi}{3} \cos\left( \frac{t \pi}{3}  \right) & 0 & -\frac{\pi}{3} \sin\left( \frac{t \pi}{3}  \right) & 2 \\
+                            0 & 0 & 0 & 0
+                           \end{bmatrix} = \begin{bmatrix}
+                           R'(t) & s'(t) \\
+                           0 & 0 \end{bmatrix}
+      \end{align*}
+      
+      Therefore, we have that
+      \begin{align*}
+       R'(1) &= \begin{bmatrix}
+                \frac{\pi}{3}* \frac{\sqrt{3}}{2} & 0 & -\frac{\pi}{3}* \frac{1}{2}
+                            \\
+                            0 & 0 & 0  \\
+                            \frac{\pi}{3} *\frac{1}{2} & 0 & -\frac{\pi}{3} *\frac{\sqrt{3}}{2} 
+               \end{bmatrix}
+      \end{align*}
+      Finally, the angular velocity is obtained by taking:
+      \begin{align*}
+       \hat \omega(1) & = R'(1) R(1)^T = \begin{bmatrix}
+                \frac{\pi}{3}* \frac{\sqrt{3}}{2} & 0 & -\frac{\pi}{3}* \frac{1}{2}
+                            \\
+                            0 & 0 & 0  \\
+                            \frac{\pi}{3} *\frac{1}{2} & 0 & -\frac{\pi}{3} *\frac{\sqrt{3}}{2} \end{bmatrix}
+                            \begin{bmatrix}
+                            \frac{1}{2}  & 0 & \frac{\sqrt{3}}{2} \\
+                            0  &  1 &  0\\
+                            -\frac{\sqrt{3}}{2} &  0 & \frac{1}{2} 
+                            \end{bmatrix}
+                            \\
+                &= \begin{bmatrix}
+                    0 & 0 & -\frac{\pi}{3} \\
+                    0 & 0 & 0\\
+                    \frac{\pi}{3} & 0 & 0
+                   \end{bmatrix}
+    \Rightarrow \omega(1) = \begin{bmatrix}
+                             0 \\ -\frac{\pi}{3} \\ 0
+                            \end{bmatrix}
+      \end{align*}
+      
+      The linear velocity is given by
+      \begin{align*}
+       \omega(1) \times s(1) + s'(1) = \begin{bmatrix}
+                             0 \\ -\frac{\pi}{3} \\ 0
+                            \end{bmatrix} \times \begin{bmatrix}
+                             1 \\ 0 \\ 2
+                            \end{bmatrix} + \begin{bmatrix}
+                             1 \\ 0 \\ 2
+                            \end{bmatrix} = \begin{bmatrix}
+                            1-\frac{2\pi}{3} \\ 0 \\ 2+ \frac{\pi}{3}
+                            \end{bmatrix}
+      \end{align*}
+
+      \red{
+      \item \textbf{Compute the linear and the angular velocity with respect to the robot frame at time $t = 1$.} \\\\
+      At time $t = 1$ the robot is at $\begin{bmatrix} 1 \\ 0 \\ 2 \end{bmatrix}$
+      
+      }
+      
+      \item\textbf{ Compute the coordinates of the point $p_W = (9, 0, 0)$ in the robot frame (i.e., find $p_R$ in the robot frame) at time $t = 1$.} \\\\
+      Let the superscript $H$ denote the point in homogeneous coordinates. Then we have:
+      \begin{align*}
+       p_R^H &= \left[T(1)\right]^{-1}p_W^H
+       \\
+       &=\begin{bmatrix}
+        R(1)^T & -R(1)^T s(1) \\
+        0 & 1
+       \end{bmatrix} \begin{bmatrix}
+       9 \\ 0 \\0 \\ 1\end{bmatrix}
+       \\
+       &=
+       \begin{bmatrix}
+        \frac{1}{2}  & 0 & \frac{\sqrt{3}}{2} & -\frac{1+2\sqrt{3}}{2}\\
+        0  &  1 &  0 & 0\\
+        -\frac{\sqrt{3}}{2} &  0 & \frac{1}{2} &  \frac{\sqrt{3}-2}{2}
+        \\
+        0 & 0 & 0 & 1
+       \end{bmatrix}\begin{bmatrix}
+       9 \\ 0 \\0 \\ 1\end{bmatrix}
+       \\
+       &= 
+       \begin{bmatrix}
+        \frac{8-2\sqrt{3}}{2} \\0 \\ -\frac{8\sqrt{3}+2}{2} \\ 1
+       \end{bmatrix}
+      \end{align*}
+      Therefore:
+      \begin{align*}
+       p_R = \begin{bmatrix}
+        \frac{8-2\sqrt{3}}{2} \\0 \\ -\frac{8\sqrt{3}+2}{2}
+       \end{bmatrix}
+      \end{align*}
+
+
     \end{enumerate}
 
   \item  Consider the discrete-time nonlinear time-invariant system:
@@ -56,10 +262,86 @@
   x_{t+1} &= -0.1 x_t + \cos(x_t) + w_t, \qquad &w_t& \sim \mathcal{N}(0,1)\\
    z_t &= x_t^2 + v_t, \qquad &v_t& \sim \mathcal{N}(0,0.5)
   \end{align*}
-  with a prior distribution $x_0 \sim \mathcal{N}(0,1)$.
+  
+  Note that both the state vector and the observation vector are univariate. Therefore, we simply have:
     \begin{enumerate}
-      \item Derive the extended Kalman filter equations by linearizing around the nominal state $x_t^{nom} \equiv 1$.
-      \item Derive the unscented Kalman filter equations around the nominal state $x_t^{nom} \equiv 1$.
+      \item \textbf{Derive the extended Kalman filter equations by linearizing around the current state $\hat x_t \equiv 1$ with associated covariance $\Sigma_t = 1$}\\\\
+      We compute the necessary derivatives.
+      \begin{align*}
+       \frac{d}{dx_1} g(x_t) &= -0.1 - \sin(x_1) \Rightarrow \frac{d}{dx_1}g(1) = -0.1 - \sin(1) = -0.9415
+       \\
+       \frac{d}{dx_1}h(x_t) &=  2x_t \Rightarrow \frac{d}{dx_1}h(1) = 2
+      \end{align*}
+     Furthermore we are given:
+     \begin{align*}
+      R_t &= 1 \\
+      Q_t &= 0.5 \\
+     \end{align*}
+     Therefore, we have that
+     \begin{align*}
+      \hat x_{t+1} &= -0.1+\cos(1) = 0.4403 
+      \\
+      \Sigma_{t+1} &= 0.9415 * 1 * 0.9415+ 1 = 1.8864
+      \\
+      \Rightarrow K_{t+1} &= 1.8864* 2 *\left( 2 * 1.8864 * 2 + 0.5\right)^{-1} = 0.4689
+      \\
+      \Rightarrow x'_{t+1} &= -0.1+\cos(1) + 0.4689(z_t-0.4403^2) = 0.4403 + 0.4689(z_t-0.1939)
+      \\
+      \Rightarrow \Sigma'_{t+1} &= (1 - 0.4689* 2)* 1.8864 = 0.1172
+     \end{align*}
+
+     
+
+
+
+      \item \textbf{Derive the unscented Kalman filter equations around the current state $\hat x_t \equiv 1$ with associated covariance $\Sigma_t = 1$. For the values of the UKF parameters use $k= 3$ and $\alpha = 0.75$ and the rest as in the slides} \\\\
+      We compute the set of sigma points $\calX_t$
+      we first compute the $\gamma$ coefficient:
+      \begin{align*}
+       \lambda &= \alpha^2*(n+\kappa)-n = (0.75)^2(1+3)-1 = 1.25
+       \\
+       \Rightarrow \gamma &= \sqrt{n+\lambda} = \sqrt{2.25} = 1.5
+      \end{align*}
+
+      
+      \begin{align*}
+       \calX_{t+1} &= \{1, 1 + 1.5*\sqrt{1}, 1-1.5*\sqrt{1}  \} = \{1, 2.5, 0.5\}
+       \\
+       \Rightarrow \bar \calX_{t+1}^* &=  \{0.4403, -0.0793, 0.8276\}
+       \\
+       \Rightarrow
+       \bar \mu_{t+1} &= \frac{1.25}{1.25+1} 0.4403 - \frac{0.0793}{2(1+1.25)} + \frac{0.8276}{2(1+1.25)} = 0.4109
+       \\
+       \Rightarrow
+       \bar \Sigma_{t+1} &= \left(\frac{1.25}{1.25+1} +(1-(0.75)^2+2) \right)( 0.4403 - 0.4109)^2  + \frac{( -0.0793 - 0.4109)^2}{2(1+1.25)} + \frac{( 0.8276- 0.4109)^2}{2(1+1.25)}+1
+       \\
+       &= 1.0946
+       \\
+       \bar \calX_{t+1} &= \{0.4109, 0.4109+1.5*\sqrt{1.0946}, 0.4109-1.5*\sqrt{1.0946}\}
+       \\
+       &= \{0.4109, 1.9802, -1.1584\}
+       \\
+       \Rightarrow \bar \calZ_{t+1} &= \{0.1688, 3.9213, 1.3419\}
+       \\
+       \Rightarrow \hat z_{t+1} &= \frac{1.25}{1.25+1}* 0.1688 - \frac{3.9213}{2(1+1.25)} + \frac{1.3419}{2(1+1.25)} = 1.2634
+       \\
+       \Rightarrow S_t &=\left(\frac{1.25}{1.25+1} +(1-(0.75)^2+2) \right)( 0.1688 - 1.2634)^2  + \frac{( 3.9213- 1.2634)^2}{2(1+1.25)} + \frac{(1.3419- 1.2634)^2}{2(1+1.25)}+0.5 \\
+       &= 5.6573
+       \\
+       \bar \Sigma_{t+1}^{x,z} &= \left(\frac{1.25}{1.25+1} +(1-(0.75)^2+2) \right)( 0.4403 - 0.4109)( 0.1688 - 1.2634)  +
+       \\
+       &\qquad\frac{( -0.0793 - 0.4109)( 3.9213- 1.2634)}{2(1+1.25)} + \frac{( 0.8276- 0.4109)(1.3419- 1.2634)}{2(1+1.25)}
+       \\
+       &= -0.3786
+       \\
+       \Rightarrow K_{t+1} &= -0.3786*(5.6573)^{-1} = -0.0669
+       \\
+       \Rightarrow x_{t+1} &= 0.4109-0.0669(z_t - 1.2634)
+       \\
+       \Rightarrow \Sigma_{t+1} &= 1.0946-0.0669^2*5.6573 = 1.0693
+      \end{align*}
+      
+
           \end{enumerate} 
 \item Consider a vehicle equipped with a laser scanner, whose dynamics can be modeled by 
 \begin{equation}
@@ -128,10 +410,45 @@ where $(x_L,y_L)$ are the coordinates of a landmark.
 \end{figure}
 \begin{enumerate}
     \item Compute the motion model Jacobian, where $(x_v,y_v,\phi_v)$ are the state variables.
+    The motion model Jacobian is given by
+%     \begin{align*}
+%     \begin{bmatrix}
+%      v_c\cos(\phi) - a \sin(\phi) -b\cos(\phi) & 0 & a\sin(\phi) -b\cos(\phi) + \Delta T\left(-v_c\sin(\phi) -\frac{v_c}{L}\tan(\alpha) (a\cos(\phi)-b\sin(\phi)) \right)
+%      \\
+%      0 & v_c \sin(\phi) + a \cos(\phi) - b \sin(\phi) & a\cos(\phi)-b\sin(\phi) + \Delta T \left(v_c \cos(\phi) + \frac{v_c}{L}\tan(\alpha)(-a\sin(\phi) - b \cos(\phi)) \right)
+%      \\
+%      0 & 0 & v_c \tan(\alpha)
+%      \end{bmatrix}
+%     \end{align*}
+\begin{align*}
+    \begin{bmatrix}
+     1 & 0 & \Delta T\left(-v_c\sin(\phi) -\frac{v_c}{L}\tan(\alpha) (a\cos(\phi)-b\sin(\phi)) \right)
+     \\
+     0 & 1 & \Delta T \left(v_c \cos(\phi) + \frac{v_c}{L}\tan(\alpha)(-a\sin(\phi) - b \cos(\phi)) \right)
+     \\
+     0 & 0 & 1
+     \end{bmatrix}
+    \end{align*}
+
     \item Compute the measurement model Jacobian, where $(x_v,y_v,\phi_v,x_L,y_L)$ are the state variables (assume a single landmark).
+    The measurement model Jacobian is
+    
+
 \end{enumerate}
 
+
     \end{enumerate} 
+    \begin{align*}
+     \begin{bmatrix}
+      -(x_L-x_v)\left((x_L-x_v)^2 + (y_L-y_v)^2 \right)^{-1/2} & \frac{y_L-y_v}{(y_L-y_v)^2+(x_L-x_v)^2}\\\ 
+      -(y_L-y_v)\left((x_L-x_v)^2 + (y_L-y_v)^2 \right)^{-1/2} & -\frac{x_L-x_v}{(y_L-y_v)^2+(x_L-x_v)^2}\\ 
+      0 & -1\\ 
+      (x_L-x_v)\left((x_L-x_v)^2 + (y_L-y_v)^2 \right)^{-1/2} & -\frac{y_L-y_v}{(y_L-y_v)^2+(x_L-x_v)^2} \\ 
+      (y_L-y_v)\left((x_L-x_v)^2 + (y_L-y_v)^2 \right)^{-1/2} & \frac{x_L-x_v}{(y_L-y_v)^2+(x_L-x_v)^2}
+      \\
+      %
+     \end{bmatrix}^T
+    \end{align*}
 
 
 \section{Part 2 - EKF SLAM (70 Points)}
