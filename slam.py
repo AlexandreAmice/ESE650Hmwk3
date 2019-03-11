@@ -6,6 +6,8 @@ import slam_utils
 import tree_extraction
 from scipy.stats.distributions import chi2
 from math import cos, sin, tan, atan2, acos, asin
+from sys import maxsize as MAXINT
+from prettytable import PrettyTable
 
 def motion_model(u, dt, ekf_state, vehicle_params):
     '''
@@ -14,7 +16,8 @@ def motion_model(u, dt, ekf_state, vehicle_params):
     Returns:
         f(x,u), a 3x1 vector corresponding to motion x_{t+1} - x_t given the odometry u.
 
-        df/dX, the 3x3 Jacobian of f with respect to the vehicle state (x, y, phi)
+        df/dX, the 3x3 Jacobian of f with respect to the vehicle state (x, y, phi).
+        UPDATE: I will return a 3+2m x 3+ 2m matrix instead
     '''
 
     ###
@@ -33,15 +36,21 @@ def motion_model(u, dt, ekf_state, vehicle_params):
     xv2 = xv1+dt*(vc*cos(phi1) - vc/L*tan(alpha)*(a*sin(phi1)+b*cos(phi1)))
     yv2 = yv1 + dt*(vc*sin(phi1) + vc/L*tan(alpha)*(a*cos(phi1)-b*sin(phi1)))
     phi2 = slam_utils.clamp_angle(phi1 + dt*vc/L*tan(alpha))
-    motion = np.array([xv2-xv1, yv2-yv1, phi2-phi1])
-    motion[2] = slam_utils.clamp_angle(motion[2])
+    # motion = np.array([xv2 - xv1, yv2 - yv1, phi2 - phi1])
+    # motion[2] = slam_utils.clamp_angle(motion[2])
+    dx = dt*(vc*cos(phi1) - vc/L*tan(alpha)*(a*sin(phi1)+b*cos(phi1)))
+    dy = dt*(vc*sin(phi1) + vc/L*tan(alpha)*(a*cos(phi1)-b*sin(phi1)))
+    dphi = slam_utils.clamp_angle(dt*vc/L*tan(alpha))
+    motion = np.array([dx,dy,dphi])
+
     # G = np.array([[vc*cos(phi1)-a*sin(phi1)*vc*tan(alpha)-b*cos(phi1)*vc*tan(alpha), 0, dt*vc*tan(alpha)*(-vc*sin(phi1)-vc/L*tan(alpha)*(a*cos(phi1)-b*sin(phi1)))],
     #              [0, vc*sin(phi1)+a*cos(phi1)*vc*tan(alpha)-b*sin(phi1)*vc*tan(alpha), vc*tan(alpha)*(a*cos(phi1)-b*sin(phi1) + dt*(vc*cos(phi1)+vc/L*tan(alpha)*(-a*sin(phi1)-b*cos(phi1))))],
     #              [0, 0, vc*tan(alpha)]])
-    G  = np.array([[1, 0, dt*(-vc*sin(phi2) - vc/L*tan(alpha)*(a*cos(phi2)-b*cos(phi2)))],
+    Gx  = np.array([[1, 0, dt*(-vc*sin(phi2) - vc/L*tan(alpha)*(a*cos(phi2)-b*cos(phi2)))],
                    [0,1,dt*(vc*cos(phi2) + vc/L*tan(alpha)*(-a*sin(phi2)-b*cos(phi2)))],
                    [0,0,1]])
 
+    G = spl.block_diag(Gx, np.eye(2*ekf_state["num_landmarks"]))
 
 
     return motion, G
@@ -55,12 +64,15 @@ def odom_predict(u, dt, ekf_state, vehicle_params, sigmas):
     Returns the new ekf_state.
     '''
     motion, G = motion_model(u,dt,ekf_state,vehicle_params)
-    xhat = ekf_state['x']+motion
+    Fx = np.zeros((3, 3+2*ekf_state['num_landmarks']))
+    Fx[0:3,0:3] = np.eye(3)
+    xhat = ekf_state['x'][0:3]+motion
     xhat[2] = slam_utils.clamp_angle(xhat[2])
     R = np.diag([sigmas['xy'], sigmas['xy'], sigmas['phi']])
-    Sigmat = slam_utils.make_symmetric(G @ ekf_state['P'][0:3, 0:3] @ G.transpose() + R)
-    ekf_state['x'] = xhat
-    ekf_state['P'][0:3, 0:3] = Sigmat
+    # Sigmat = slam_utils.make_symmetric(G @ ekf_state['P'][0:3, 0:3] @ G.transpose() + R)
+    Sigmat = slam_utils.make_symmetric(G @ ekf_state['P'] @ G.transpose() + Fx.transpose() @ R @ Fx)
+    ekf_state['x'][0:3] = xhat
+    ekf_state['P'] = Sigmat
     return ekf_state
 
 
@@ -83,7 +95,7 @@ def gps_update(gps, ekf_state, sigmas):
     Ht = np.eye(2)
     Kt = Sigmat@Ht.transpose()@npl.inv(Ht@Sigmat@Ht.transpose() + Q.transpose())
     Sigmat = slam_utils.make_symmetric((np.eye(2) - Kt@Ht)@Sigmat)
-    if r.transpose()@Sigmat@r > 13.8:
+    if r.transpose()@npl.inv(Q)@r > 13.8:
         return ekf_state
     ekf_state['x'][0:2] = ekf_state['x'][0:2]+Kt@r
     ekf_state['P'][0:2, 0:2] = Sigmat
@@ -100,24 +112,26 @@ def laser_measurement_model(ekf_state, landmark_id):
         dh/dX: For a measurement state with m mapped landmarks, i.e. a state vector of
                 dimension 3 + 2*m, this should return the full 2 by 3+2m Jacobian
                 matrix corresponding to a measurement of the landmark_id'th feature.
+        UPDATE we return H as a 5 x 3+2*m matrix
     '''
     x = ekf_state['x'][0]
     y = ekf_state['x'][1]
     phi = ekf_state['x'][2]
-    xL = ekf_state['x'][2+landmark_id]
-    yL = ekf_state['x'][3+landmark_id]
-    zhat = np.array([np.sqrt((xL-x)^2 +(yL-y)^2), atan2(yL-y,xL-x)-phi+np.pi/2])
-    dx = xL-x
-    dy = yL-y
-    dxdy = dx**2+dy**2
-    Hupdate = np.array([[-dx*(dxdy)**(-0.5), -dy*(dxdy)**(-0.5), 0, dx*(dxdy)**(-0.5), dy*(dxdy)**(-0.5)],
-                        dy/(dxdy), dx/(dxdy), -1, -dy/(dxdy), -dx/(dxdy)])
-    Fxj = np.zeros_like(ekf_state['P'])
+    xL = ekf_state['x'][2+(2*landmark_id-1)]
+    yL = ekf_state['x'][3+(2*landmark_id-1)]
+    dx = xL - x
+    dy = yL - y
+    dxdy = dx ** 2 + dy ** 2
+    zhat = np.array([np.sqrt(dxdy), atan2(dy,dx)-phi+np.pi/2])
+    Hupdate = np.array([[-dx*np.sqrt((dxdy)), -dy*np.sqrt((dxdy)), 0, dx*np.sqrt((dxdy)), dy*np.sqrt((dxdy))],
+                        [dy/(dxdy), dx/(dxdy), -1, -dy/(dxdy), -dx/(dxdy)]])
+    Fxj = np.zeros((5, ekf_state['P'].shape[0]))
     Fxj[0:3,0:3] = np.eye(3)
     Fxj[3,3+2*landmark_id-2] = 1
     Fxj[4, 3 + 2 * landmark_id-1] = 1
-    H = Hupdate*Fxj
+    H = Hupdate@Fxj
     return zhat, H
+
 
 def initialize_landmark(ekf_state, tree):
     '''
@@ -126,11 +140,13 @@ def initialize_landmark(ekf_state, tree):
 
     Returns the new ekf_state.
     '''
-    (r,b) = tree
+    (range, angle, diameter) = tree
+    #TODO account for the diameter
+    (r,b) = (range, angle)
     x, y, phi = ekf_state['x'][0],ekf_state['x'][1],ekf_state['x'][2]
-    xL = x+r*cos(b+phi)
-    yL = y+r*sin(b+phi)
-    ekf_state['x'] = np.array([ekf_state['x'], xL, yL])
+    xL = x+r*cos(b+phi-np.pi/2)
+    yL = y+r*sin(b+phi-np.pi/2)
+    ekf_state['x'] = np.append(ekf_state['x'], (xL, yL))
     ekf_state['P'] = spl.block_diag(ekf_state['P'], np.eye(2))
     ekf_state['num_landmarks'] = ekf_state['num_landmarks']+1
     return ekf_state
@@ -156,6 +172,41 @@ def compute_data_association(ekf_state, measurements, sigmas, params):
     ###
     # Implement this function.
     ###
+    M = np.zeros((len(measurements), ekf_state["num_landmarks"]))
+    Sigma = ekf_state['P']
+
+    #Establish Q
+    # Q = np.zeros_like(Sigma)
+    # Q[0,0], Q[1,1], Q[2,2] = sigmas['xy'], sigmas['xy'], sigmas['phi']
+    # for i in range(3,3+ekf_state['num_landmarks']):
+    #     if i%2 == 1:
+    #         Q[i] = sigmas['range']
+    #     else:
+    #         Q[i] = sigmas['bearing']
+    Q = np.diag([sigmas['range'], sigmas['bearing']])
+
+    #build cost
+    for i,m in enumerate(measurements):
+        (r, b, d) = m
+        # TODO account for the diameter
+        (r, b) = (r, b)
+        for j in range(0,ekf_state['num_landmarks']):
+            (zr, zb), H = laser_measurement_model(ekf_state, j+1)
+            innov = np.array([r-zr, slam_utils.clamp_angle(b-zb)])
+            residCov = H @ Sigma @ H.transpose() + Q.transpose()
+            # Kt = Sigma @ H.transpose() @ npl.inv(H @ Sigma @ H.transpose() + Q.transpose())
+            # SigmaT = (np.eye(Kt.shape[0]) - Kt @ H)@ Sigma
+            M[i,j] = innov.transpose() @ npl.inv(residCov) @ innov
+    matchings = slam_utils.solve_cost_matrix_heuristic(M.copy())
+
+    assoc = np.zeros(len(measurements))
+    for (i,j) in matchings:
+        if M[i,j] > chi2.ppf(.9,2):
+            assoc[i] = -2
+        elif M[i,j] > chi2.ppf(0.5,2):
+            assoc[i] = -1
+        else:
+            assoc[i] = j
 
     return assoc
 
@@ -174,10 +225,37 @@ def laser_update(trees, assoc, ekf_state, sigmas, params):
 
     Returns the ekf_state.
     '''
-
+    return ekf_state
     ###
     # Implement the EKF update for a set of range, bearing measurements.
     ###
+    sigmaBar = ekf_state['P']
+    # Establish Q
+    # Q = np.zeros_like(Sigma)
+    # Q[0, 0], Q[1, 1], Q[2, 2] = sigmas['xy'], sigmas['xy'], sigmas['phi']
+    # for i in range(3, 3 + ekf_state['num_landmarks']):
+    #     if i % 2 == 1:
+    #         Q[i] = sigmas['range']
+    #     else:
+    #         Q[i] = sigmas['bearing']
+    Q = np.eye(2)
+    Q[0,0] = sigmas['range']
+    Q[1,1] = sigmas['bearing']
+
+    for i, tree in enumerate(trees):
+        if assoc[i] == -1:
+            initialize_landmark(ekf_state, tree)
+            #new landmark made covariance grow
+            sigmaBar = ekf_state['P']
+        elif assoc[i] != -2:
+            zhat, H = laser_measurement_model(ekf_state, i)
+            zr, zb, _ = tree
+            innov = np.array([zr-zhat[0], zb-zhat[1]])
+            Kt = sigmaBar @H.transpose()@npl.inv(H @ sigmaBar @ H.transpose() + Q.transpose())
+            ekf_state['x'] = ekf_state['x'] + Kt@innov
+            ekf_state['P'] = slam_utils.make_symmetric( (np.eye(Kt.shape[0]) - Kt@H) @sigmaBar )
+
+
 
     return ekf_state
 
@@ -193,7 +271,8 @@ def run_ekf_slam(events, ekf_state_0, vehicle_params, filter_params, sigmas):
     state_history = {
         't': [0],
         'x': ekf_state['x'],
-        'P': np.diag(ekf_state['P'])
+        'P': np.diag(ekf_state['P']),
+        'e': ['init']
     }
 
     if filter_params["do_plot"]:
@@ -230,6 +309,7 @@ def run_ekf_slam(events, ekf_state_0, vehicle_params, filter_params, sigmas):
         state_history['x'] = np.vstack((state_history['x'], ekf_state['x'][0:3]))
         state_history['P'] = np.vstack((state_history['P'], np.diag(ekf_state['P'][:3,:3])))
         state_history['t'].append(t)
+        state_history['e'].append(event[0])
 
     return state_history
 
@@ -284,7 +364,15 @@ def main():
         "num_landmarks": 0
     }
 
-    run_ekf_slam(events, ekf_state, vehicle_params, filter_params, sigmas)
+    state_history = run_ekf_slam(events[:1000], ekf_state, vehicle_params, filter_params, sigmas)
+    t = PrettyTable(['Time', 'X', 'Y', 'Event'])
+    with open('stateHistory.txt','w') as f:
+        len_hist = len(state_history['t'])
+        for i in range(len_hist):
+            #line = '%.3f' % state_history['t'][i] + ',' + '%.2f' % state_history['x'][i][0] +',' + '%.2f' % state_history['x'][i][1]
+            #f.write(line + "\n")
+            t.add_row(['%.3f' % state_history['t'][i], '%.2f' % state_history['x'][i][0], '%.2f' % state_history['x'][i][1], state_history['e'][i]])
+        f.write(str(t))
 
 if __name__ == '__main__':
     main()
