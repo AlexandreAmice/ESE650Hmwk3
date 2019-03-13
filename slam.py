@@ -44,11 +44,8 @@ def motion_model(u, dt, ekf_state, vehicle_params):
     dphi = slam_utils.clamp_angle(dt*vc/L*tan(alpha))
     motion = np.array([dx,dy,dphi])
 
-    # G = np.array([[vc*cos(phi1)-a*sin(phi1)*vc*tan(alpha)-b*cos(phi1)*vc*tan(alpha), 0, dt*vc*tan(alpha)*(-vc*sin(phi1)-vc/L*tan(alpha)*(a*cos(phi1)-b*sin(phi1)))],
-    #              [0, vc*sin(phi1)+a*cos(phi1)*vc*tan(alpha)-b*sin(phi1)*vc*tan(alpha), vc*tan(alpha)*(a*cos(phi1)-b*sin(phi1) + dt*(vc*cos(phi1)+vc/L*tan(alpha)*(-a*sin(phi1)-b*cos(phi1))))],
-    #              [0, 0, vc*tan(alpha)]])
-    Gx  = np.array([[1, 0, dt*(-vc*sin(phi2) - vc/L*tan(alpha)*(a*cos(phi2)-b*cos(phi2)))],
-                   [0,1,dt*(vc*cos(phi2) + vc/L*tan(alpha)*(-a*sin(phi2)-b*cos(phi2)))],
+    Gx  = np.array([[1, 0, dt*(-vc*sin(phi1) - vc/L*tan(alpha)*(a*cos(phi1)-b*cos(phi1)))],
+                   [0,1,dt*(vc*cos(phi1) + vc/L*tan(alpha)*(-a*sin(phi1)-b*cos(phi1)))],
                    [0,0,1]])
 
     G = spl.block_diag(Gx, np.eye(2*ekf_state["num_landmarks"]))
@@ -93,9 +90,10 @@ def gps_update(gps, ekf_state, sigmas):
     Q = sigmas['gps']*np.eye(2)
     r = zhat - hxt
     Ht = np.eye(2)
-    Kt = Sigmat@Ht.transpose()@npl.inv(Ht@Sigmat@Ht.transpose() + Q.transpose())
+    S = npl.inv(Ht@Sigmat@Ht.transpose() + Q.transpose())
+    Kt = Sigmat@Ht.transpose()@ S
     Sigmat = slam_utils.make_symmetric((np.eye(2) - Kt@Ht)@Sigmat)
-    if r.transpose()@npl.inv(Ht@Sigmat@Ht.transpose() + Q.transpose())@r > 13.8:
+    if r.transpose()@ S @r > 13.8:
         return ekf_state
     ekf_state['x'][0:2] = ekf_state['x'][0:2]+Kt@r
     ekf_state['P'][0:2, 0:2] = Sigmat
@@ -218,15 +216,13 @@ def compute_data_association(ekf_state, measurements, sigmas, params):
     sortMatchings = [x for _, x in sorted(zip(costs, matchings))]
     assoc = -2*np.ones(len(measurements))
     for (i,j) in sortMatchings:
-        if M[i,j] < chi2.ppf(0.95,2):
+        if M[i,j] < chi2.ppf(0.9,2):
             assoc[i] = j
-        elif M[i,j] < chi2.ppf(0.99, 2):
+        elif M[i,j] < chi2.ppf(0.9999, 2):
             assoc[i] = -2
         else:
             assoc[i] = -1
 
-    if len(measurements) > ekf_state['num_landmarks']:
-        print('stop')
     return assoc
 
 def laser_update(trees, assoc, ekf_state, sigmas, params):
@@ -253,11 +249,9 @@ def laser_update(trees, assoc, ekf_state, sigmas, params):
         if assoc[i] == -1:
             initialize_landmark(ekf_state, tree)
         elif assoc[i] != -2:
-            zhat, H = laser_measurement_model(ekf_state, i)
+            zhat, H = laser_measurement_model(ekf_state, int(assoc[i]))
             zr, zb, _ = tree
             innov = np.array([zr-zhat[0], zb-zhat[1]])
-            if npl.norm(innov) > 1:
-                print(innov)
             ekf_correction(ekf_state, H, innov, Q)
 
 
@@ -294,6 +288,7 @@ def run_ekf_slam(events, ekf_state_0, vehicle_params, filter_params, sigmas):
         t = event[1][0]
         if i % 1000 == 0:
             print("t = {}".format(t))
+            print("num landmarks = {}\n".format(ekf_state['num_landmarks']))
 
         if event[0] == 'gps':
             gps_msmt = event[1][1:]
@@ -352,7 +347,7 @@ def main():
         # general...
         "do_plot": True,
         "plot_raw_laser": True,
-        "plot_map_covariances": True
+        "plot_map_covariances": False
 
         # Add other parameters here if you need to...
     }
