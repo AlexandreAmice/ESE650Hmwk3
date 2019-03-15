@@ -81,7 +81,6 @@ def gps_update(gps, ekf_state, sigmas):
     ###
     # Implement the GPS update.
     ###
-    return ekf_state
     zhat = gps
     hxt = ekf_state['x'][0:2]
     Sigmat = ekf_state['P']
@@ -112,7 +111,6 @@ def laser_measurement_model(ekf_state, landmark_id):
         dh/dX: For a measurement state with m mapped landmarks, i.e. a state vector of
                 dimension 3 + 2*m, this should return the full 2 by 3+2m Jacobian
                 matrix corresponding to a measurement of the landmark_id'th feature.
-        UPDATE we return H as a 5 x 3+2*m matrix
     '''
     xv = ekf_state['x'][0]
     yv = ekf_state['x'][1]
@@ -123,14 +121,14 @@ def laser_measurement_model(ekf_state, landmark_id):
     dy = yL - yv
     q = dx ** 2 + dy ** 2
     zhat = np.array([np.sqrt(q), slam_utils.clamp_angle(atan2(dy,dx)-phi)])
-    # Hupdate = np.array([[-dx/np.sqrt((q)), -dy/np.sqrt((q)), 0, dx/np.sqrt((q)), dy/np.sqrt((q))],
-    #                     [dy/(q), -dx/(q), -1, -dy/(q), dx/(q)]])
-    Hupdate = 1/float(q) * np.array([[-np.sqrt(q) * dx, -np.sqrt(q)*dy, 0, np.sqrt(q)*dx, np.sqrt(q)*dy],
-                              [dy, -dx, -q, -dy, dx]])
+    Hupdate = np.array([[-dx/np.sqrt((q)), -dy/np.sqrt((q)), 0, dx/np.sqrt((q)), dy/np.sqrt((q))],
+                        [dy/(q), -dx/(q), -1, -dy/(q), dx/(q)]])
+    # Hupdate = 1/float(q) * np.array([[-np.sqrt(q) * dx, -np.sqrt(q)*dy, 0, np.sqrt(q)*dx, np.sqrt(q)*dy],
+    #                           [dy, -dx, -q, -dy, dx]])
     Fxj = np.zeros((5, ekf_state['P'].shape[0]))
     Fxj[0:3,0:3] = np.eye(3)
-    Fxj[0,2+(2*landmark_id+1)] = 1
-    Fxj[1, 3+(2*landmark_id+1)] = 1
+    Fxj[3,2+(2*landmark_id+1)] = 1
+    Fxj[4, 3+(2*landmark_id+1)] = 1
     H = np.matmul(Hupdate, Fxj)
     return zhat, H
 
@@ -175,7 +173,6 @@ def compute_data_association(ekf_state, measurements, sigmas, params):
     # Implement this function.
     ###
     M = np.zeros((len(measurements), ekf_state["num_landmarks"]))
-    Me = np.zeros((len(measurements), ekf_state["num_landmarks"]))
     Sigma = ekf_state['P']
 
     Q = np.diag([sigmas['range'], sigmas['bearing']])
@@ -192,7 +189,6 @@ def compute_data_association(ekf_state, measurements, sigmas, params):
             innov[1] = slam_utils.clamp_angle(innov[1])
             residCov = mult3(H, Sigma, H.transpose()) + Q.transpose()
             M[i,j] = mult3(innov.transpose(), npl.inv(residCov), innov)
-            Me[i,j] = npl.norm(innov)
     if M.shape[0] > M.shape[1]:
         B = chi2.ppf(0.95,2) * np.ones((M.shape[0], M.shape[0]))
         M = np.hstack((M, B))
@@ -250,7 +246,6 @@ def laser_update(trees, assoc, ekf_state, sigmas, params):
             z = np.array([zr,zb])
             innov = z-zhat
             innov[1] = slam_utils.clamp_angle(innov[1])
-            #print(innov)
             innovTot[2*i:2*i+2] = innov
             Htot[2*i:2*i+2, :] = H
     ekf_correction(ekf_state, Htot, innovTot, Q)
@@ -259,7 +254,8 @@ def laser_update(trees, assoc, ekf_state, sigmas, params):
 
 def ekf_correction(ekf_state, H, innov, Q):
     sigmaBar = ekf_state['P']
-    Q = np.kron(np.eye(int(H.shape[0]/2.0)), Q)
+    if (H.shape[0] > 2):
+        Q = np.kron(np.eye(int(H.shape[0]/2.0)), Q)
     Kt = mult3(sigmaBar, H.transpose(), npl.inv(mult3(H, sigmaBar, H.transpose()) + Q.transpose()) )
     ekf_state['x'] = ekf_state['x'] + np.matmul(Kt, innov)
     ekf_state['x'][2] = slam_utils.clamp_angle( ekf_state['x'][2] )
